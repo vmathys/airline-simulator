@@ -462,7 +462,66 @@ with st.expander("Key terms (click to expand)", expanded=True):
         """
     )
 
+with st.expander("Available routes & aircraft (click to expand)", expanded=False):
+
+    # Routes table
+    routes_df = pd.DataFrame([
+        {
+            "Route": r["name"],
+            "Distance (mi)": r["distance_miles"],
+            "Airport fees / flight ($)": r["airport_fees_per_flight"],
+        }
+        for r in ROUTES
+    ])
+
+    st.markdown("**Routes in this simulator**")
+    st.dataframe(
+        routes_df.style.format({
+            "Distance (mi)": "{:,.0f}",
+            "Airport fees / flight ($)": "${:,.0f}",
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # Aircraft table (show seat capacity proxy + fuel at reference distance)
+    aircraft_df = pd.DataFrame([
+        {
+            "Aircraft": a["name"],
+            "Max floor space (units)": a["max_floor_space_units"],
+            "Reference fuel burn (gal @ ~1600 mi)": a["base_fuel_burn_gallons"],
+            "Fuel price ($/gal)": a["fuel_cost_per_gallon"],
+            "Implied fuel cost @ ref ($)": a["base_fuel_burn_gallons"] * a["fuel_cost_per_gallon"],
+        }
+        for a in AIRCRAFT
+    ])
+
+    st.markdown("**Aircraft options (simplified)**")
+    st.dataframe(
+        aircraft_df.style.format({
+            "Max floor space (units)": "{:,.0f}",
+            "Reference fuel burn (gal @ ~1600 mi)": "{:,.0f}",
+            "Fuel price ($/gal)": "${:,.2f}",
+            "Implied fuel cost @ ref ($)": "${:,.0f}",
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.caption(
+        "Fuel burn scales with distance in the model (using the reference burn around a ~1600-mile stage length). "
+        "Floor space is a simplified proxy for aircraft size/capacity."
+    )
+
+
 st.info("You can save configurations at the bottom of the page to compare scenarios side-by-side.")
+st.caption(
+    "Benchmark fares are calibrated to **publicly observed one-way prices approximately ~3 weeks from today** "
+    "for these routes, then rounded and simplified for workshop use (they are directional, not exact)."
+)
+st.caption(
+    "Premium here is a stand-in for full-fare economy / extra-legroom access, not a true premium cabin."
+)
 st.markdown("---")
 
 

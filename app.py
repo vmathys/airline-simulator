@@ -51,10 +51,10 @@ FUEL_DISTANCE_EXPONENT = 1.03      # slight nonlinearity; set to 1.0 for purely 
 FARE_BENCHMARKS = {
     # Baselines are workshop-friendly (not “true market fares”).
     # Economy anchored to observed/advertised floors; premium/first derived from NYC–DEN ratios.
-    "NYC–DEN": {"Y": 80, "P": 170, "F": 600},  # from your observed shopping
-    "NYC–ATL": {"Y": 35, "P": 75,  "F": 260},  # econ floors ~25–28; benchmark slightly above floor
-    "NYC–ORD": {"Y": 45, "P": 95,  "F": 330},  # econ floor ~33
-    "NYC–MIA": {"Y": 55, "P": 120, "F": 410},  # econ floor ~28 (often volatile); benchmark above floor
+    "NYC–DEN": {"Y": 120, "P": 255, "F": 700},  # from your observed shopping
+    "NYC–ATL": {"Y": 110, "P": 280,  "F": 600},  # econ floors ~25–28; benchmark slightly above floor
+    "NYC–ORD": {"Y": 80, "P": 150,  "F": 330},  # econ floor ~33
+    "NYC–MIA": {"Y": 100, "P": 210, "F": 720},  # econ floor ~28 (often volatile); benchmark above floor
 }
 FARE_WARN_MULTIPLIER = {"Y": 1.5, "P": 1.45, "F": 1.35}
 

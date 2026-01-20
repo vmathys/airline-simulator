@@ -49,12 +49,14 @@ FUEL_DISTANCE_EXPONENT = 1.03      # slight nonlinearity; set to 1.0 for purely 
 
 # Fare benchmarks (workshop-friendly, NOT “real market fares”)
 FARE_BENCHMARKS = {
-    "NYC–DEN": {"Y": 180, "P": 400, "F": 900},
-    "NYC–ATL": {"Y": 140, "P": 320, "F": 750},
-    "NYC–ORD": {"Y": 135, "P": 310, "F": 725},
-    "NYC–MIA": {"Y": 160, "P": 360, "F": 825},
+    # Baselines are workshop-friendly (not “true market fares”).
+    # Economy anchored to observed/advertised floors; premium/first derived from NYC–DEN ratios.
+    "NYC–DEN": {"Y": 80, "P": 170, "F": 600},  # from your observed shopping
+    "NYC–ATL": {"Y": 35, "P": 75,  "F": 260},  # econ floors ~25–28; benchmark slightly above floor
+    "NYC–ORD": {"Y": 45, "P": 95,  "F": 330},  # econ floor ~33
+    "NYC–MIA": {"Y": 55, "P": 120, "F": 410},  # econ floor ~28 (often volatile); benchmark above floor
 }
-FARE_WARN_MULTIPLIER = {"Y": 1.35, "P": 1.30, "F": 1.25}
+FARE_WARN_MULTIPLIER = {"Y": 1.5, "P": 1.45, "F": 1.35}
 
 # Supported routes
 ROUTES = [
@@ -388,9 +390,42 @@ seats_economy = st.sidebar.number_input("Economy Seats", min_value=0, value=140,
 st.sidebar.markdown("---")
 st.sidebar.subheader("Average One-Way Fares")
 
-fare_first = st.sidebar.number_input("First Fare ($)", min_value=500.0, max_value=1500.0, value=900.0, step=25.0)
-fare_premium = st.sidebar.number_input("Premium Fare ($)", min_value=250.0, max_value=750.0, value=400.0, step=10.0)
-fare_economy = st.sidebar.number_input("Economy Fare ($)", min_value=99.0, max_value=350.0, value=180.0, step=5.0)
+bench = FARE_BENCHMARKS.get(selected_route["name"], {"Y": 80, "P": 170, "F": 600})
+
+# Dynamic bounds (workshop-friendly)
+y_min = max(25.0, round(bench["Y"] * 0.5))
+y_max = min(400.0, round(bench["Y"] * 3.0))
+
+p_min = max(60.0, round(bench["P"] * 0.5))
+p_max = min(600.0, round(bench["P"] * 2.5))
+
+f_min = max(180.0, round(bench["F"] * 0.5))
+f_max = min(1500.0, round(bench["F"] * 2.0))
+
+fare_economy = st.sidebar.number_input(
+    "Economy Fare ($)",
+    min_value=float(y_min),
+    max_value=float(y_max),
+    value=float(bench["Y"]),
+    step=5.0
+)
+
+fare_premium = st.sidebar.number_input(
+    "Premium Fare ($)",
+    min_value=float(p_min),
+    max_value=float(p_max),
+    value=float(bench["P"]),
+    step=10.0
+)
+
+fare_first = st.sidebar.number_input(
+    "First Fare ($)",
+    min_value=float(f_min),
+    max_value=float(f_max),
+    value=float(bench["F"]),
+    step=25.0
+)
+
 
 st.sidebar.info("Load factor is fixed at 85% across all cabins (baseline assumption).")
 

@@ -1,13 +1,15 @@
-
 # app.py
 # Airline Flight Economics Simulator
 # ----------------------------------
 # A Streamlit app to configure a single flight and analyze CASM, RASM, yield, and profitability.
-# The app supports route and aircraft selection, cabin seat mix, and fare inputs.
-# It enforces a simple floor space constraint and optional extra crew cost when seat thresholds are exceeded.
+# Supports route & aircraft selection, cabin seat mix, and fare inputs.
+# Enforces a simple floor space constraint and optional extra crew cost when seat thresholds are exceeded.
 #
-# Author: (You)
-# Date: 2026-01-18
+# Updates (2026-01-20):
+# - Added top-of-page intro + expandable definitions + “save scenarios” callout
+# - Fuel now scales with route distance (stage length)
+# - Added optional “demand cap” demo + price warnings when fares look high vs route benchmarks
+# - Added simple automated commentary comparing saved scenarios
 
 import math
 from typing import Dict, Any, Tuple, List
@@ -15,6 +17,7 @@ from typing import Dict, Any, Tuple, List
 import streamlit as st
 import pandas as pd
 import altair as alt
+
 
 # -------------------------------
 # Page Config
@@ -40,6 +43,19 @@ SPACE_FIRST = 3.5
 SPACE_PREMIUM = 2.0
 SPACE_ECONOMY = 1.0
 
+# Fuel scaling assumptions
+FUEL_REF_DISTANCE_MILES = 1600.0   # interpret base_fuel_burn_gallons as burn for ~1600-mile stage
+FUEL_DISTANCE_EXPONENT = 1.03      # slight nonlinearity; set to 1.0 for purely linear scaling
+
+# Fare benchmarks (workshop-friendly, NOT “real market fares”)
+FARE_BENCHMARKS = {
+    "NYC–DEN": {"Y": 180, "P": 400, "F": 900},
+    "NYC–ATL": {"Y": 140, "P": 320, "F": 750},
+    "NYC–ORD": {"Y": 135, "P": 310, "F": 725},
+    "NYC–MIA": {"Y": 160, "P": 360, "F": 825},
+}
+FARE_WARN_MULTIPLIER = {"Y": 1.35, "P": 1.30, "F": 1.25}
+
 # Supported routes
 ROUTES = [
     {"name": "NYC–DEN", "distance_miles": 1600, "airport_fees_per_flight": 5000.0},
@@ -53,7 +69,7 @@ AIRCRAFT = [
     {
         "name": "A321neo",
         "max_floor_space_units": 220.0,
-        "base_fuel_burn_gallons": 4500.0,   # one-way, at this route distance (used as given)
+        "base_fuel_burn_gallons": 4500.0,   # ~1600-mile stage (reference)
         "fuel_cost_per_gallon": 2.50,
         "base_crew_cost": 8000.0,
         "extra_crew_threshold_seats": 180,
@@ -63,7 +79,7 @@ AIRCRAFT = [
     {
         "name": "A220-300",
         "max_floor_space_units": 135.0,
-        "base_fuel_burn_gallons": 3000.0,
+        "base_fuel_burn_gallons": 3000.0,   # ~1600-mile stage (reference)
         "fuel_cost_per_gallon": 2.50,
         "base_crew_cost": 6000.0,
         "extra_crew_threshold_seats": 120,
@@ -73,7 +89,7 @@ AIRCRAFT = [
     {
         "name": "737 MAX 8",
         "max_floor_space_units": 175.0,
-        "base_fuel_burn_gallons": 4200.0,
+        "base_fuel_burn_gallons": 4200.0,   # ~1600-mile stage (reference)
         "fuel_cost_per_gallon": 2.50,
         "base_crew_cost": 7500.0,
         "extra_crew_threshold_seats": 170,
@@ -113,15 +129,14 @@ def validate_configuration(
         (is_valid, errors, floor_space_used, floor_space_max)
     """
     errors = []
-    # Non-negative and integer counts are handled by Streamlit inputs,
-    # but we enforce again for safety.
+
     if seats_first < 0 or seats_premium < 0 or seats_economy < 0:
         errors.append("Seat counts must be non-negative integers.")
+
     total_seats = seats_first + seats_premium + seats_economy
     if total_seats <= 0:
         errors.append("Total seats must be greater than 0.")
 
-    # Floor space use
     floor_space_used = (
         seats_first * SPACE_FIRST +
         seats_premium * SPACE_PREMIUM +
@@ -138,6 +153,19 @@ def validate_configuration(
     return (len(errors) == 0, errors, floor_space_used, floor_space_max)
 
 
+def demand_factor(fare: float, baseline: float, elasticity: float, floor: float) -> float:
+    """
+    Returns a multiplier in (floor..1]. If fare <= baseline -> 1.0.
+    If fare > baseline -> declines as (baseline/fare)^elasticity.
+    This is a workshop-friendly “demand cap” proxy (not a true demand model).
+    """
+    if baseline <= 0:
+        return 1.0
+    if fare <= baseline:
+        return 1.0
+    return max(floor, (baseline / fare) ** elasticity)
+
+
 def compute_flight_economics(
     route: Dict[str, Any],
     aircraft: Dict[str, Any],
@@ -149,6 +177,7 @@ def compute_flight_economics(
     fare_economy: float,
     load_factor: float = LOAD_FACTOR,
     ancillary_per_pax: float = ANCILLARY_REVENUE_PER_PAX,
+    apply_demand_cap: bool = False,
 ) -> Dict[str, Any]:
     """
     Compute all key outputs for the configured flight.
@@ -162,16 +191,22 @@ def compute_flight_economics(
     - Profit = total_revenue - operating_cost
     - Profit Margin = Profit / total_revenue
     """
-
     distance = float(route["distance_miles"])
     airport_fees = float(route["airport_fees_per_flight"])
-
     total_seats = int(seats_first + seats_premium + seats_economy)
 
-    # Passengers by cabin (fixed load factor)
-    pax_F = seats_first * load_factor
-    pax_P = seats_premium * load_factor
-    pax_Y = seats_economy * load_factor
+    # Demand cap (optional)
+    bench = FARE_BENCHMARKS.get(route["name"], {"Y": fare_economy, "P": fare_premium, "F": fare_first})
+    df_Y = demand_factor(fare_economy, bench["Y"], elasticity=0.9, floor=0.55)
+    df_P = demand_factor(fare_premium, bench["P"], elasticity=0.75, floor=0.60)
+    df_F = demand_factor(fare_first,   bench["F"], elasticity=0.60, floor=0.65)
+    if not apply_demand_cap:
+        df_Y = df_P = df_F = 1.0
+
+    # Passengers by cabin (fixed load factor × optional demand cap)
+    pax_F = seats_first * load_factor * df_F
+    pax_P = seats_premium * load_factor * df_P
+    pax_Y = seats_economy * load_factor * df_Y
     total_pax = pax_F + pax_P + pax_Y
 
     # Revenues
@@ -182,8 +217,12 @@ def compute_flight_economics(
     ancillary_revenue = total_pax * ancillary_per_pax
     total_revenue = passenger_revenue + ancillary_revenue
 
-    # Fuel cost (as provided per aircraft, one-way)
-    fuel_cost = float(aircraft["base_fuel_burn_gallons"]) * float(aircraft["fuel_cost_per_gallon"])
+    # Fuel burn scales with distance
+    base_burn = float(aircraft["base_fuel_burn_gallons"])
+    fuel_price = float(aircraft["fuel_cost_per_gallon"])
+    distance_factor = (distance / FUEL_REF_DISTANCE_MILES) ** FUEL_DISTANCE_EXPONENT
+    fuel_burn_gallons = base_burn * distance_factor
+    fuel_cost = fuel_burn_gallons * fuel_price
 
     # Crew cost (extra crew if total seats exceed aircraft threshold)
     crew_cost = float(aircraft["base_crew_cost"])
@@ -200,7 +239,7 @@ def compute_flight_economics(
     ASMs = total_seats * distance  # Available Seat Miles
     RPMs = total_pax * distance    # Revenue Passenger Miles
 
-    # Guard against division by zero (edge cases)
+    # Unit metrics
     yield_per_rpm = passenger_revenue / RPMs if RPMs > 0 else 0.0  # $/RPM
     casm = operating_cost / ASMs if ASMs > 0 else 0.0              # $/ASM
     rasm = total_revenue / ASMs if ASMs > 0 else 0.0               # $/ASM
@@ -222,11 +261,17 @@ def compute_flight_economics(
         "fare_premium": fare_premium,
         "fare_economy": fare_economy,
         "load_factor": load_factor,
+        "apply_demand_cap": apply_demand_cap,
+        "demand_factor_first": df_F,
+        "demand_factor_premium": df_P,
+        "demand_factor_economy": df_Y,
+
         # Pax breakdown
         "pax_first": pax_F,
         "pax_premium": pax_P,
         "pax_economy": pax_Y,
         "total_pax": total_pax,
+
         # Revenues
         "rev_first": rev_F,
         "rev_premium": rev_P,
@@ -234,19 +279,24 @@ def compute_flight_economics(
         "passenger_revenue": passenger_revenue,
         "ancillary_revenue": ancillary_revenue,
         "total_revenue": total_revenue,
+
         # Costs
+        "fuel_burn_gallons": fuel_burn_gallons,
         "fuel_cost": fuel_cost,
         "crew_cost": crew_cost,
         "maintenance_cost": maintenance_cost,
         "operating_cost": operating_cost,
+
         # Capacity / utilization
         "total_seats": total_seats,
         "ASMs": ASMs,
         "RPMs": RPMs,
+
         # Unit metrics
         "yield_per_rpm": yield_per_rpm,   # $ per RPM
         "casm": casm,                     # $ per ASM
         "rasm": rasm,                     # $ per ASM
+
         # Profitability
         "profit": profit,
         "profit_margin": profit_margin,
@@ -263,12 +313,49 @@ def money(value: float) -> str:
     return f"${value:,.0f}"
 
 
-def money_precise(value: float, decimals: int = 2) -> str:
-    return f"${value:,.{decimals}f}"
+def scenario_insight(a: Dict[str, Any], b: Dict[str, Any]) -> str:
+    """
+    Compare scenario b vs a and explain profit delta with a simple driver + suggestion.
+    """
+    dp = float(b.get("Profit", 0.0) - a.get("Profit", 0.0))
+    direction = "higher" if dp >= 0 else "lower"
+
+    d_rev = float(b.get("Total_Revenue", 0.0) - a.get("Total_Revenue", 0.0))
+    d_cost = float(b.get("Operating_Cost", 0.0) - a.get("Operating_Cost", 0.0))
+
+    # Biggest cost swing
+    cost_drivers = []
+    for k, label in [("Fuel_Cost", "fuel"), ("Crew_Cost", "crew"), ("Maint_Cost", "maintenance"), ("Airport_Fees", "airport fees")]:
+        if k in a and k in b:
+            delta = float(b[k] - a[k])
+            cost_drivers.append((abs(delta), delta, label))
+    cost_drivers.sort(reverse=True, key=lambda x: x[0])
+
+    driver_line = ""
+    if cost_drivers and cost_drivers[0][0] >= 250:  # only mention if meaningful
+        _, d, label = cost_drivers[0]
+        driver_line = f" Biggest cost swing: **{label}** ({'+' if d >= 0 else ''}{d:,.0f})."
+
+    # Suggestions (simple heuristics)
+    suggestions = []
+    if float(b.get("CASM_cents", 0)) > float(a.get("CASM_cents", 0)) + 0.05:
+        suggestions.append("Try lowering unit cost (right-size aircraft, improve seat-space efficiency, or reduce per-flight cost items).")
+    if float(b.get("RASM_cents", 0)) + 0.05 < float(a.get("RASM_cents", 0)):
+        suggestions.append("Try lifting unit revenue (seat mix, smarter pricing, or higher ancillaries).")
+    if float(b.get("Fare_Y", 0)) > float(a.get("Fare_Y", 0)) and dp < 0:
+        suggestions.append("If pricing is constraining demand, test a lower economy fare or shift seats toward premium cabins.")
+    if not suggestions:
+        suggestions.append("To push profit further, experiment with cabin mix + fares while watching the RASM–CASM spread.")
+
+    return (
+        f"Scenario **{b.get('Route','')} / {b.get('Aircraft','')}** is **{direction} profit** by "
+        f"{dp:,.0f} versus the comparison scenario. Revenue changed by {d_rev:,.0f} and operating cost changed by {d_cost:,.0f}."
+        f"{driver_line} Next step: {suggestions[0]}"
+    )
 
 
 # -------------------------------
-# Session State for Scenario Storage (Optional Feature)
+# Session State for Scenario Storage
 # -------------------------------
 if "scenario_history" not in st.session_state:
     st.session_state["scenario_history"] = []  # list of dicts
@@ -292,7 +379,7 @@ selected_aircraft = get_aircraft_by_name(aircraft_name)
 st.sidebar.markdown("---")
 st.sidebar.subheader("Cabin Seat Configuration")
 
-# Defaults chosen to fit on A321neo by default:
+# Defaults chosen to fit on A321neo:
 # 8F (28 units), 18P (36 units), 140Y (140 units) => 204 units <= 220
 seats_first = st.sidebar.number_input("First Class Seats", min_value=0, value=8, step=1, format="%d")
 seats_premium = st.sidebar.number_input("Premium Economy Seats", min_value=0, value=18, step=1, format="%d")
@@ -305,22 +392,57 @@ fare_first = st.sidebar.number_input("First Fare ($)", min_value=500.0, max_valu
 fare_premium = st.sidebar.number_input("Premium Fare ($)", min_value=250.0, max_value=750.0, value=400.0, step=10.0)
 fare_economy = st.sidebar.number_input("Economy Fare ($)", min_value=99.0, max_value=350.0, value=180.0, step=5.0)
 
-st.sidebar.info("Load factor is fixed at 85% across all cabins.")
+st.sidebar.info("Load factor is fixed at 85% across all cabins (baseline assumption).")
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Demand realism (optional)")
+apply_demand_cap = st.sidebar.checkbox(
+    "Apply demand cap when fares are high (demo)",
+    value=False,
+    help="If enabled, expected sold seats per cabin are reduced when fares exceed a route benchmark."
+)
 
 
 # -------------------------------
-# Main Area: Summary & Validation
+# Main Area: Title + Intro + Definitions
 # -------------------------------
 st.title("Airline Flight Economics Simulator")
 st.caption("Explore how route, aircraft, cabin mix, and fares affect CASM, RASM, yield, and profitability (one-way flight).")
 
-col_summary1, col_summary2, col_summary3 = st.columns([1.5, 1.5, 1.5])
+st.markdown("""
+Welcome! Configure a flight in the sidebar, then review the economics below.
+This is a **teaching model** designed for workshops—directionally right, not airline-finance perfect.
+""")
+
+with st.expander("Key terms (click to expand)", expanded=True):
+    st.markdown(
+        """
+- **ASM (Available Seat Mile):** Seats flown × distance  
+- **RPM (Revenue Passenger Mile):** Paying passengers × distance  
+- **Yield ($/RPM):** Passenger revenue ÷ RPMs (excludes ancillaries)  
+- **CASM ($/ASM):** Operating cost ÷ ASMs  
+- **RASM ($/ASM):** Total revenue (incl. ancillaries) ÷ ASMs  
+- **Profit:** Total revenue − operating cost  
+- **Profit margin:** Profit ÷ total revenue
+        """
+    )
+
+st.info("You can save configurations at the bottom of the page to compare scenarios side-by-side.")
+st.markdown("---")
+
+
+# -------------------------------
+# Summary & Validation
+# -------------------------------
+col_summary1, col_summary2, col_summary3, col_summary4 = st.columns([1.4, 1.4, 1.2, 1.2])
 with col_summary1:
     st.write(f"**Route:** {selected_route['name']} ({selected_route['distance_miles']} miles)")
 with col_summary2:
     st.write(f"**Aircraft:** {selected_aircraft['name']} (Max floor space: {selected_aircraft['max_floor_space_units']:.0f})")
 with col_summary3:
-    fs_used = seats_first*SPACE_FIRST + seats_premium*SPACE_PREAMIUM if False else None  # placeholder safety; replaced immediately below
+    st.write(f"**Seat Count:** {seats_first + seats_premium + seats_economy}")
+with col_summary4:
+    st.write(f"**Demand cap demo:** {'On' if apply_demand_cap else 'Off'}")
 
 # Validate configuration and compute floor space usage
 is_valid, errors, floor_space_used, floor_space_max = validate_configuration(
@@ -332,8 +454,8 @@ is_valid, errors, floor_space_used, floor_space_max = validate_configuration(
 
 # Display floor space utilization
 util_pct = (floor_space_used / floor_space_max * 100.0) if floor_space_max > 0 else 0.0
-util_note = f"**Floor Space Used:** {floor_space_used:.1f} / {floor_space_max:.1f} units ({util_pct:.1f}%)"
-st.write(util_note)
+st.write(f"**Floor Space Used:** {floor_space_used:.1f} / {floor_space_max:.1f} units ({util_pct:.1f}%)")
+
 if is_valid:
     if util_pct >= 95.0:
         st.warning("You're close to the aircraft's floor space limit.")
@@ -343,9 +465,9 @@ else:
     for err in errors:
         st.error(err)
 
-# Early exit if invalid
 if not is_valid:
     st.stop()
+
 
 # -------------------------------
 # Compute Results
@@ -359,7 +481,26 @@ results = compute_flight_economics(
     fare_first=fare_first,
     fare_premium=fare_premium,
     fare_economy=fare_economy,
+    apply_demand_cap=apply_demand_cap,
 )
+
+# Price guardrails / warnings
+bench = FARE_BENCHMARKS.get(results["route_name"])
+if bench:
+    warnings = []
+    if results["fare_economy"] > bench["Y"] * FARE_WARN_MULTIPLIER["Y"]:
+        warnings.append("Economy fare looks **high** vs the route benchmark — would you really sell a full cabin at that price?")
+    if results["fare_premium"] > bench["P"] * FARE_WARN_MULTIPLIER["P"]:
+        warnings.append("Premium fare looks **high** vs the route benchmark — consider whether demand would soften.")
+    if results["fare_first"] > bench["F"] * FARE_WARN_MULTIPLIER["F"]:
+        warnings.append("First fare looks **high** vs the route benchmark — are there enough premium travelers on this route?")
+
+    for w in warnings:
+        st.warning(w)
+
+    if (not apply_demand_cap) and len(warnings) > 0:
+        st.info("If you want the model to *demonstrate* softer demand, enable **Demand cap when fares are high (demo)** in the sidebar.")
+
 
 # -------------------------------
 # Metrics Row
@@ -377,7 +518,8 @@ col1.metric("Profit", profit_str)
 col2.metric("CASM (¢/ASM)", f"{casm_cents:.2f}")
 col3.metric("RASM (¢/ASM)", f"{rasm_cents:.2f}")
 col4.metric("Yield (¢/RPM)", f"{yield_cents:.2f}")
-col5.metric("Load Factor", f"{int(LOAD_FACTOR*100)}%")
+col5.metric("Load Factor (base)", f"{int(LOAD_FACTOR*100)}%")
+
 
 # -------------------------------
 # Detailed Tables
@@ -393,7 +535,7 @@ seats_pax_df = pd.DataFrame({
         results["seats_economy"],
         results["total_seats"],
     ],
-    "Passengers (LF 85%)": [
+    "Passengers (LF × demand cap)": [
         results["pax_first"],
         results["pax_premium"],
         results["pax_economy"],
@@ -409,7 +551,7 @@ seats_pax_df = pd.DataFrame({
 st.dataframe(
     seats_pax_df.style.format({
         "Seats": "{:,.0f}",
-        "Passengers (LF 85%)": "{:,.1f}",
+        "Passengers (LF × demand cap)": "{:,.1f}",
         "Passenger Revenue ($)": "${:,.0f}",
     }),
     use_container_width=True,
@@ -433,26 +575,56 @@ st.dataframe(
     hide_index=True,
 )
 
-# Additional operational metrics
+# Operational metrics
 st.markdown("#### Operational Metrics")
 ops_df = pd.DataFrame({
-    "Metric": ["Distance (miles)", "ASMs", "RPMs", "Ancillary Revenue ($)", "Total Revenue ($)", "Profit Margin"],
+    "Metric": [
+        "Distance (miles)",
+        "Fuel burn (gallons, scaled)",
+        "ASMs",
+        "RPMs",
+        "Ancillary Revenue ($)",
+        "Total Revenue ($)",
+        "Profit Margin",
+        "Demand factor (First)",
+        "Demand factor (Premium)",
+        "Demand factor (Economy)",
+    ],
     "Value": [
         results["distance_miles"],
+        results["fuel_burn_gallons"],
         results["ASMs"],
         results["RPMs"],
         results["ancillary_revenue"],
         results["total_revenue"],
         f"{results['profit_margin']*100:.1f}%",
+        results["demand_factor_first"],
+        results["demand_factor_premium"],
+        results["demand_factor_economy"],
     ],
 })
+
+def _fmt_ops(metric: str, value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if "Revenue" in metric or "Total Revenue" in metric:
+        return f"${value:,.0f}"
+    if "Fuel burn" in metric:
+        return f"{value:,.0f}"
+    if metric in ("ASMs", "RPMs", "Distance (miles)"):
+        return f"{value:,.0f}"
+    if "Demand factor" in metric:
+        return f"{value:.2f}"
+    return str(value)
+
+ops_df["Value"] = [_fmt_ops(m, v) for m, v in zip(ops_df["Metric"], ops_df["Value"])]
+
 st.dataframe(
-    ops_df.style.format({
-        "Value": lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) and "%" not in str(x) and "$" not in str(x) else x
-    }),
+    ops_df,
     use_container_width=True,
     hide_index=True,
 )
+
 
 # -------------------------------
 # Charts
@@ -477,7 +649,7 @@ cr_chart = (
 )
 st.altair_chart(cr_chart, use_container_width=True)
 
-# Optional: Profit indicator as a separate bar
+# 2) Profit indicator
 profit_chart_df = pd.DataFrame({
     "Measure": ["Profit ($)"],
     "Value": [results["profit"]],
@@ -494,13 +666,15 @@ profit_chart = (
 )
 st.altair_chart(profit_chart, use_container_width=True)
 
-# -------------------------------
-# Scenario History (Optional Feature)
-# -------------------------------
-st.markdown("### Scenario Comparison (Optional)")
 
-# Button to save current scenario
-if st.button("💾 Save Scenario"):
+# -------------------------------
+# Scenario History + Comparison
+# -------------------------------
+st.markdown("### Scenario Comparison")
+
+st.success("When you're ready, save this configuration below to compare it against others.")
+
+if st.button("💾 Save this scenario to comparison table"):
     st.session_state["scenario_history"].append({
         "Route": results["route_name"],
         "Aircraft": results["aircraft_name"],
@@ -515,11 +689,23 @@ if st.button("💾 Save Scenario"):
         "Yield_cents": yield_cents,
         "Profit": results["profit"],
         "Profit_Margin_%": results["profit_margin"] * 100.0,
+
+        # Extra drivers for commentary
+        "Total_Revenue": results["total_revenue"],
+        "Operating_Cost": results["operating_cost"],
+        "Fuel_Cost": results["fuel_cost"],
+        "Crew_Cost": results["crew_cost"],
+        "Maint_Cost": results["maintenance_cost"],
+        "Airport_Fees": results["airport_fees"],
+        "Total_Seats": results["total_seats"],
+        "Distance": results["distance_miles"],
+        "DemandCap_On": results["apply_demand_cap"],
     })
     st.success("Scenario saved!")
 
 if len(st.session_state["scenario_history"]) > 0:
     hist_df = pd.DataFrame(st.session_state["scenario_history"])
+
     st.dataframe(
         hist_df.style.format({
             "Fare_F": "${:,.0f}",
@@ -530,11 +716,18 @@ if len(st.session_state["scenario_history"]) > 0:
             "Yield_cents": "{:,.2f}",
             "Profit": "${:,.0f}",
             "Profit_Margin_%": "{:,.1f}%",
+            "Total_Revenue": "${:,.0f}",
+            "Operating_Cost": "${:,.0f}",
+            "Fuel_Cost": "${:,.0f}",
+            "Crew_Cost": "${:,.0f}",
+            "Maint_Cost": "${:,.0f}",
+            "Airport_Fees": "${:,.0f}",
+            "Distance": "{:,.0f}",
         }),
         use_container_width=True
     )
 
-    # Comparison chart: Profit by scenario index
+    # Profit by scenario index
     hist_df_plot = hist_df.reset_index().rename(columns={"index": "Scenario #"})
     profit_history_chart = (
         alt.Chart(hist_df_plot)
@@ -555,26 +748,30 @@ if len(st.session_state["scenario_history"]) > 0:
         .properties(title="Saved Scenarios: Profit Comparison", height=350)
     )
     st.altair_chart(profit_history_chart, use_container_width=True)
+
+    # Automated commentary (compare last 2 scenarios)
+    st.markdown("#### Scenario commentary")
+    if len(hist_df) >= 2:
+        a = hist_df.iloc[-2].to_dict()
+        b = hist_df.iloc[-1].to_dict()
+        st.write(scenario_insight(a, b))
+    else:
+        st.caption("Save at least two scenarios to see automated commentary on why profit changed.")
 else:
-    st.info("Click **Save Scenario** to add the current configuration to the comparison history.")
+    st.info("Click **Save this scenario** to add the current configuration to the comparison history.")
+
 
 # -------------------------------
 # Footer / Teaching Notes
 # -------------------------------
-with st.expander("Notes and Definitions"):
+with st.expander("Notes (assumptions + model boundaries)"):
     st.markdown(
-        """
-- **ASMs (Available Seat Miles)** = Total Seats × Route Distance  
-- **RPMs (Revenue Passenger Miles)** = Total Passengers × Route Distance  
-- **Yield ($/RPM)** = Passenger Revenue ÷ RPMs (excludes ancillary revenue)  
-- **CASM ($/ASM)** = Operating Cost ÷ ASMs  
-- **RASM ($/ASM)** = Total Revenue ÷ ASMs (includes ancillary revenue)  
-- **Profit** = Total Revenue − Operating Cost  
-- **Profit Margin** = Profit ÷ Total Revenue
-
-The model assumes a fixed **85% load factor** in each cabin, and a simple floor space constraint
-based on seat-type multipliers (F=3.5, P=2.0, Y=1.0). Crew costs may increase when total seats exceed
-an aircraft-specific threshold. Fuel burn is treated as a fixed one-way figure per aircraft for the purposes
-of this workshop.
+        f"""
+- **Load factor** is fixed at **{int(LOAD_FACTOR*100)}%** as a baseline assumption.  
+- **Demand cap (optional):** When enabled, sold seats per cabin are reduced if fares exceed a simple benchmark
+  using a basic elasticity curve. This is meant to illustrate the idea that *pricing impacts volume*.
+- **Fuel scaling:** base fuel burn is treated as a ~{FUEL_REF_DISTANCE_MILES:.0f}-mile reference and scaled with distance.
+- **Floor space constraint:** a simplified proxy using seat-type multipliers (F=3.5, P=2.0, Y=1.0).
+- **Crew thresholds:** adds incremental crew cost above an aircraft-specific seat count.
         """
     )

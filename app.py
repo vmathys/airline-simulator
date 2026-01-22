@@ -449,7 +449,7 @@ Welcome! Configure a flight in the sidebar, then review the economics below.
 This is a **teaching model** designed for workshops—directionally right, not airline-finance perfect.
 """)
 
-with st.expander("Key terms (click to expand)", expanded=True):
+with st.expander("Key terms (click to expand)", expanded=False):
     st.markdown(
         """
 - **ASM (Available Seat Mile):** Seats flown × distance  
@@ -719,7 +719,7 @@ st.dataframe(
     hide_index=True,
 )
 
-
+'''
 # -------------------------------
 # Charts
 # -------------------------------
@@ -759,6 +759,7 @@ profit_chart = (
     .properties(title="Profit (one-way)", width=400, height=300)
 )
 st.altair_chart(profit_chart, use_container_width=True)
+'''
 
 
 # -------------------------------

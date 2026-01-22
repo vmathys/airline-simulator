@@ -719,7 +719,7 @@ st.dataframe(
     hide_index=True,
 )
 
-'''
+
 # -------------------------------
 # Charts
 # -------------------------------
@@ -759,7 +759,7 @@ profit_chart = (
     .properties(title="Profit (one-way)", width=400, height=300)
 )
 st.altair_chart(profit_chart, use_container_width=True)
-'''
+
 
 
 # -------------------------------

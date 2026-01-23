@@ -595,9 +595,8 @@ seats_pax_df = pd.DataFrame({
 
 st.dataframe(
     seats_pax_df.style.format({
-        "Seats": "{:,.0f}",
-        "Passengers (LF × demand cap)": "{:,.1f}",
-        "Passenger Revenue ($)": "${:,.0f}",
+        "Seats": lambda x: x if isinstance(x, str) else f"{x:,.0f}",
+        "Revenue ($)": "${:,.0f}",
     }),
     use_container_width=True,
     hide_index=True,

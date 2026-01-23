@@ -619,34 +619,56 @@ st.dataframe(
     hide_index=True,
 )
 
-# Operational metrics
-st.markdown("#### Operational Metrics")
-ops_df = pd.DataFrame({
-    "Metric": [
-        "Distance (miles)",
-        "Fuel burn (gallons, scaled)",
-        "ASMs",
-        "RPMs",
-        "Ancillary Revenue ($)",
-        "Total Revenue ($)",
-        "Profit Margin",
-        "Demand factor (First)",
-        "Demand factor (Premium)",
-        "Demand factor (Economy)",
-    ],
-    "Value": [
-        results["distance_miles"],
-        results["fuel_burn_gallons"],
-        results["ASMs"],
-        results["RPMs"],
-        results["ancillary_revenue"],
-        results["total_revenue"],
-        f"{results['profit_margin']*100:.1f}%",
-        results["demand_factor_first"],
-        results["demand_factor_premium"],
-        results["demand_factor_economy"],
-    ],
-})
+with st.expander("Operational details (optional)", expanded=False):
+
+    ops_df = pd.DataFrame({
+        "Metric": [
+            "Distance (miles)",
+            "Fuel burn (gallons, scaled)",
+            "ASMs",
+            "RPMs",
+            "Ancillary Revenue ($)",
+            "Total Revenue ($)",
+            "Profit Margin",
+            "Demand factor (First)",
+            "Demand factor (Premium)",
+            "Demand factor (Economy)",
+        ],
+        "Value": [
+            results["distance_miles"],
+            results["fuel_burn_gallons"],
+            results["ASMs"],
+            results["RPMs"],
+            results["ancillary_revenue"],
+            results["total_revenue"],
+            f"{results['profit_margin']*100:.1f}%",
+            results["demand_factor_first"],
+            results["demand_factor_premium"],
+            results["demand_factor_economy"],
+        ],
+    })
+
+    def _fmt_ops(metric: str, value):
+        if isinstance(value, str):
+            return value
+        if "Revenue" in metric:
+            return f"${value:,.0f}"
+        if metric in ("ASMs", "RPMs", "Distance (miles)"):
+            return f"{value:,.0f}"
+        if "Fuel burn" in metric:
+            return f"{value:,.0f}"
+        if "Demand factor" in metric:
+            return f"{value:.2f}"
+        return str(value)
+
+    ops_df["Value"] = [_fmt_ops(m, v) for m, v in zip(ops_df["Metric"], ops_df["Value"])]
+
+    st.dataframe(
+        ops_df,
+        use_container_width=True,
+        hide_index=True,
+    )
+
 
 def _fmt_ops(metric: str, value: Any) -> str:
     if isinstance(value, str):

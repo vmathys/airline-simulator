@@ -723,8 +723,8 @@ st.dataframe(
 # -------------------------------
 # Charts
 # -------------------------------
-st.markdown("### Charts")
-
+# st.markdown("### Charts")
+'''
 # 1) CASM vs RASM (cents per ASM)
 cr_df = pd.DataFrame({
     "Metric": ["CASM", "RASM"],
@@ -742,7 +742,8 @@ cr_chart = (
     .properties(title="CASM vs RASM (¢ per ASM)", width=400, height=300)
 )
 st.altair_chart(cr_chart, use_container_width=True)
-
+'''
+'''
 # 2) Profit indicator
 profit_chart_df = pd.DataFrame({
     "Measure": ["Profit ($)"],
@@ -759,7 +760,7 @@ profit_chart = (
     .properties(title="Profit (one-way)", width=400, height=300)
 )
 st.altair_chart(profit_chart, use_container_width=True)
-
+'''
 
 
 # -------------------------------

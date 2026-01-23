@@ -719,48 +719,6 @@ st.dataframe(
     hide_index=True,
 )
 
-
-# -------------------------------
-# Charts
-# -------------------------------
-'''st.markdown("### Charts")
-
-# 1) CASM vs RASM (cents per ASM)
-cr_df = pd.DataFrame({
-    "Metric": ["CASM", "RASM"],
-    "Cents_per_ASM": [casm_cents, rasm_cents],
-})
-cr_chart = (
-    alt.Chart(cr_df)
-    .mark_bar()
-    .encode(
-        x=alt.X("Metric:N", title="Metric"),
-        y=alt.Y("Cents_per_ASM:Q", title="Cents per ASM"),
-        color=alt.Color("Metric:N", legend=None),
-        tooltip=["Metric", alt.Tooltip("Cents_per_ASM:Q", format=".2f")]
-    )
-    .properties(title="CASM vs RASM (¢ per ASM)", width=400, height=300)
-)
-st.altair_chart(cr_chart, use_container_width=True)
-# 2) Profit indicator
-profit_chart_df = pd.DataFrame({
-    "Measure": ["Profit ($)"],
-    "Value": [results["profit"]],
-})
-profit_chart = (
-    alt.Chart(profit_chart_df)
-    .mark_bar(color="seagreen" if results["profit"] >= 0 else "crimson")
-    .encode(
-        x=alt.X("Measure:N", title=""),
-        y=alt.Y("Value:Q", title="Dollars"),
-        tooltip=[alt.Tooltip("Value:Q", title="Profit ($)", format=",.0f")],
-    )
-    .properties(title="Profit (one-way)", width=400, height=300)
-)
-st.altair_chart(profit_chart, use_container_width=True)
-'''
-
-
 # -------------------------------
 # Scenario History + Comparison
 # -------------------------------

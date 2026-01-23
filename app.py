@@ -570,26 +570,29 @@ st.markdown("### Detailed Breakdown")
 
 # Seats and Passengers by Cabin
 seats_pax_df = pd.DataFrame({
-    "Cabin": ["First", "Premium", "Economy", "Total"],
+    "Cabin": [
+        "First",
+        "Premium",
+        "Economy",
+        "Ancillary (per passenger)",
+        "Total Revenue",
+    ],
     "Seats": [
         results["seats_first"],
         results["seats_premium"],
         results["seats_economy"],
+        "—",
         results["total_seats"],
     ],
-    "Passengers (LF × demand cap)": [
-        results["pax_first"],
-        results["pax_premium"],
-        results["pax_economy"],
-        results["total_pax"],
-    ],
-    "Passenger Revenue ($)": [
+    "Revenue ($)": [
         results["rev_first"],
         results["rev_premium"],
         results["rev_economy"],
-        results["passenger_revenue"],
+        results["ancillary_revenue"],
+        results["total_revenue"],
     ],
 })
+
 st.dataframe(
     seats_pax_df.style.format({
         "Seats": "{:,.0f}",

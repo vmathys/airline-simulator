@@ -449,8 +449,21 @@ Welcome! Configure a flight in the sidebar, then review the economics below.
 This is a **teaching model** designed for workshops—directionally right, not airline-finance perfect.
 """)
 
-
-st.info("You can save configurations at the bottom of the page to compare scenarios side-by-side.")
+st.markdown(
+    """
+    <div style="
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        background-color: #f6f8fa;
+        color: #333;
+        font-size: 0.9rem;
+        margin-top: 0.5rem;
+    ">
+        💾 Save configurations at the bottom of the page to compare scenarios side-by-side.
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 st.caption(
     "Benchmark fares are calibrated to **publicly observed one-way prices approximately ~3 weeks from today** "
     "for these routes, then rounded and simplified for workshop use (they are directional, not exact)."

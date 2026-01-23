@@ -467,8 +467,6 @@ st.markdown(
 st.caption(
     "Benchmark fares are calibrated to **publicly observed one-way prices approximately ~3 weeks from today** "
     "for these routes, then rounded and simplified for workshop use (they are directional, not exact)."
-)
-st.caption(
     "Premium here is a stand-in for full-fare economy / extra-legroom access, not a true premium cabin."
 )
 st.markdown("---")
@@ -550,19 +548,20 @@ if bench:
 # -------------------------------
 st.markdown("### Key Metrics")
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col1, col2, col3, col4, col5, col6 = st.columns(6)
 
 profit_str = money(results["profit"])
 casm_cents = cents_per_mile(results["casm"])
 rasm_cents = cents_per_mile(results["rasm"])
 yield_cents = cents_per_mile(results["yield_per_rpm"])
+margin_pct = results["profit_margin"] * 100
 
 col1.metric("Profit", profit_str)
 col2.metric("CASM (¢/ASM)", f"{casm_cents:.2f}")
 col3.metric("RASM (¢/ASM)", f"{rasm_cents:.2f}")
 col4.metric("Yield (¢/RPM)", f"{yield_cents:.2f}")
-col5.metric("Load Factor (base)", f"{int(LOAD_FACTOR*100)}%")
-
+col5.metric("Profit Margin", f"{margin_pct:.1f}%")
+col6.metric("Load Factor (base)", f"{int(LOAD_FACTOR*100)}%")
 
 # -------------------------------
 # Detailed Tables

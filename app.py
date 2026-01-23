@@ -669,28 +669,6 @@ with st.expander("Operational details (optional)", expanded=False):
         hide_index=True,
     )
 
-
-def _fmt_ops(metric: str, value: Any) -> str:
-    if isinstance(value, str):
-        return value
-    if "Revenue" in metric or "Total Revenue" in metric:
-        return f"${value:,.0f}"
-    if "Fuel burn" in metric:
-        return f"{value:,.0f}"
-    if metric in ("ASMs", "RPMs", "Distance (miles)"):
-        return f"{value:,.0f}"
-    if "Demand factor" in metric:
-        return f"{value:.2f}"
-    return str(value)
-
-ops_df["Value"] = [_fmt_ops(m, v) for m, v in zip(ops_df["Metric"], ops_df["Value"])]
-
-st.dataframe(
-    ops_df,
-    use_container_width=True,
-    hide_index=True,
-)
-
 # -------------------------------
 # Scenario History + Comparison
 # -------------------------------
